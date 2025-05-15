@@ -76,8 +76,8 @@ async function handleRequest(request, env, ctx) {
         const xml = await request.text();
         //log to stream
         //ctx.waitUntil(env.kvs.put(timestamp, xml));
-        const msg = parseMessageRaw(xml);
-        ctx.waitUntil(env.kvs.put(timestamp, msg));
+        const msg = parseMessageRaw(xml, env);
+        await env.kvs.put(timestamp, msg);
         switch (msg.type) {
           case "text":
             reply = await callAzureAI(env, msg.Content, null);
@@ -96,7 +96,7 @@ async function handleRequest(request, env, ctx) {
         });
       }
     } catch (error) {
-      kvs.put(Date.now(), error);
+      await kvs.put(Date.now(), error);
       return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });

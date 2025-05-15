@@ -4,7 +4,7 @@
 
 import { parseStringPromise } from 'xml2js';
 
-export async function parseMessageRaw(xmlMessage) {
+export async function parseMessageRaw(xmlMessage, env) {
     const message = await parseStringPromise(xmlMessage, {
         explicitArray: false,
         mergeAttrs: true
