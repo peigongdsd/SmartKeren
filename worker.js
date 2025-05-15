@@ -65,6 +65,7 @@ async function handleRequest(request, env, ctx) {
         reply = "对不起，暂时还不支持这种类型的消息";
     }
     //const replyXml = await buildReply(env, msg);
+    console.log(reply);
     const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
     return new Response(replyXml, {
       status: 200,
