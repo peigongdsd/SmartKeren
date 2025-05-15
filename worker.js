@@ -1,3 +1,5 @@
+import { callAzureAI } from "./azure_ai.js";
+
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx);
@@ -26,7 +28,7 @@ async function handleRequest(request, env, ctx) {
   }
   else if (url.pathname === "/test-ai-1919810") {
     const query = params.get('query') || '';
-    return new Response(await callAzureAIFoundry(env, query, null), { status : 200 });
+    return new Response(await callAzureAI(env, query, null), { status : 200 });
     //return callAzureAIFoundry(env, query, null);
   }
 
@@ -128,7 +130,7 @@ async function buildReply(env, msg) {
   const fromUser = msg.ToUserName;
   const now = Math.floor(Date.now() / 1000);
   //const content = `猫猫虫回答-3：${msg.Content || msg.Event}`;
-  const content = await callAzureAIFoundry(env, msg.Content || msg.Event, null);
+  const content = await callAzureAI(env, msg.Content || msg.Event, null);
   return `<xml>
   <ToUserName><![CDATA[${toUser}]]></ToUserName>
   <FromUserName><![CDATA[${fromUser}]]></FromUserName>
@@ -171,12 +173,12 @@ async function callAzureAIFoundry(env, text, imageUrlOrBase64) {
   }
 
   // 3. Invoke the REST endpoint
-  const url = `${endpoint}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`; //:contentReference[oaicite:5]{index=5}
+  const url = `${endpoint}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`; 
   const response = await fetch(url, {
     method:  'POST',
     headers: {
-      'Content-Type': 'application/json',                     // request format :contentReference[oaicite:6]{index=6}
-      'api-key'      : apiKey                                  // simple API key auth :contentReference[oaicite:7]{index=7}
+      'Content-Type': 'application/json',                     // request format 
+      'api-key'      : apiKey                                  // simple API key auth 
     },
     body: JSON.stringify({
       messages,

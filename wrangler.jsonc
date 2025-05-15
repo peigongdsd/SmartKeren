@@ -26,8 +26,6 @@
     ],
 
     "vars": {
-        "API_HOST": "api.example.com",
-        "MAX_RETRIES": "3"
       }
   }
   
