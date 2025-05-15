@@ -100,30 +100,31 @@ async function handleRequest(request, env, ctx) {
         //log to stream
         ctx.waitUntil(env.kvs.put(Date.now(), xml));
         const msg = await parseMessageRaw(xml, env);
-        ctx.waitUntil(env.kvs.put(Date.now(), msg));
+        ctx.waitUntil(env.kvs.put(Date.now()+1, msg));
         let reply = "";
         switch (msg.type) {
           case "text":
             reply = await callAzureAI(env, msg.data.content, null);
-            ctx.waitUntil(env.kvs.put(Date.now(), "text: " + reply));
+            ctx.waitUntil(env.kvs.put(Date.now()+2, "text: " + reply));
             break;
           case "image":
             reply = await callAzureAI(env, null, msg.data.PicUrl);
-            ctx.waitUntil(env.kvs.put(Date.now(), "image: " + reply));
+            ctx.waitUntil(env.kvs.put(Date.now()+3, "image: " + reply));
             break;
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
-            ctx.waitUntil(env.kvs.put(Date.now(), "unsupported: " + reply));
+            ctx.waitUntil(env.kvs.put(Date.now()+4, "unsupported: " + reply));
         }
         //const replyXml = await buildReply(env, msg);
         const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
+        ctx.waitUntil(env.kvs.put(Date.now()+5, "reply: " + replyXml));
         return new Response(replyXml, {
           status: 200,
           headers: { 'Content-Type': 'application/xml' }
         });
       }
     } catch (error) {
-      await env.kvs.put(Date.now(), error);
+      await env.kvs.put(Date.now()+5, error);
       return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });
