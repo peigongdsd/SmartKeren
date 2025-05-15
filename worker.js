@@ -53,10 +53,22 @@ async function handleRequest(request, env, ctx) {
   else if (url.pathname === "/test-xml-1919810") {
     const xml = params.get('xml') || '';
     const msg = await parseMessageRaw(xml, env);
-    console.log(msg);
-    return new Response(msg, {
+    let reply = "";
+    switch (msg.type) {
+      case "text":
+        reply = await callAzureAI(env, msg.data.content, null);
+        break;
+      case "image":
+        reply = await callAzureAI(env, null, msg.data.PicUrl);
+        break;
+      default:
+        reply = "对不起，暂时还不支持这种类型的消息";
+    }
+    //const replyXml = await buildReply(env, msg);
+    const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
+    return new Response(replyXml, {
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/xml' }
     });
   }
   //debug end
@@ -84,8 +96,9 @@ async function handleRequest(request, env, ctx) {
       if (hash == signature) {
         const xml = await request.text();
         //log to stream
-        //ctx.waitUntil(env.kvs.put(timestamp, xml));
+        ctx.waitUntil(env.kvs.put(timestamp, xml));
         const msg = await parseMessageRaw(xml, env);
+        let reply = "";
         switch (msg.type) {
           case "text":
             reply = await callAzureAI(env, msg.data.content, null);
@@ -96,8 +109,9 @@ async function handleRequest(request, env, ctx) {
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
         }
+        ctx.waitUntil(env.kvs.put(Date.now(), reply));
         //const replyXml = await buildReply(env, msg);
-        const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, text, reply);
+        const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
         return new Response(replyXml, {
           status: 200,
           headers: { 'Content-Type': 'application/xml' }
