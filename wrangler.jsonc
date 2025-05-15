@@ -23,6 +23,11 @@
             "binding": "kvs",
             "id": "7df548af6bd84f28a493147a666fc162"
         }
-    ]
+    ],
+
+    "vars": {
+        "API_HOST": "api.example.com",
+        "MAX_RETRIES": "3"
+      }
   }
   
