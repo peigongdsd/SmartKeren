@@ -32,7 +32,7 @@
             "id": "7df548af6bd84f28a493147a666fc162"
         },
         {
-            // Powered Users 
+            // Powered Users, Admin | Suspend
           "binding": "admins",
           "id": "5ba71c87ed4e4cea9700830a9ab45885"
         }

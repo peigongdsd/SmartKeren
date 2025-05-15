@@ -12,7 +12,7 @@ export function db_initTenantTable(db) {
 }
 
 export function db_nucTenantTable(db) {
-    console.log("I'm not gonna do this!");
+    console.log("I am not gonna do this!");
     return db.prepare("");
 }
 
@@ -34,27 +34,29 @@ export function db_deleteUser(db, openid) {
       `).bind(openid);
 }
 
-export async function db_userExpired(db, openid) {
-    // 1. Compute current Unix time (seconds)
-    const now = Math.floor(Date.now() / 1000);
-
-    // 2. Run the SQL expiration check entirely on SQLite side
-    const row = await db.prepare(`
-    SELECT
-      CASE
-        WHEN (SELECT validUntil FROM tenant WHERE openid = ?) IS NULL THEN 1
-        WHEN (SELECT validUntil FROM tenant WHERE openid = ?) <  ? THEN 1
-        ELSE 0
-      END AS expired;
-  `)
-        .bind(openid, openid, now)
-        .first();  // returns { expired: number }
-
-    // 3. Interpret `1` as true, `0` as false
-    return row.expired === 1;
-}
-
 export async function dbcommit(db, transactions) {
     return await db.batch(transactions);
 }
+
+export async function userExpired(env, openid) {
+
+    const permission = await env.admins.get(openid);
+    if (permission === "Admin") {
+        return false;
+    } else {
+        const row = await db
+            .prepare(`SELECT validUntil FROM tenant WHERE openid = ?`)
+            .bind(openid)
+            .first();
+
+        // If no row found, return expired
+        if (!row) {
+            return true;
+        } else {
+            return Date.now() > row.validUntil;
+        }
+    }
+}
+
+
 
