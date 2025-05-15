@@ -5,15 +5,13 @@
 import { parseStringPromise } from 'xml2js';
 
 export async function parseMessageRaw(xmlMessage, env) {
-    const message = await parseStringPromise(xmlMessage, {
+    const message = (await parseStringPromise(xmlMessage, {
         explicitArray: false,
         mergeAttrs: true
-      });
-    await env.kvs.put(timestamp, message);
+      })).xml;
     const type = message.MsgType;
-    await env.kvs.put(timestamp, type);
+    console.log(type);
     let data = {};
-  
     switch (type) {
       case 'text':
         // 文本消息包含 Content 字段
@@ -44,8 +42,7 @@ export async function parseMessageRaw(xmlMessage, env) {
         data = { raw: message };
         break;
     }
-  
-    return { type, data };
+    return {type: type, data: data};
 }
 
 // 简单正则解析微信 XML 中常用字段

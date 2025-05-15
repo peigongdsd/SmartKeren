@@ -50,6 +50,15 @@ async function handleRequest(request, env, ctx) {
     return new Response(await callAzureAI(env, query, null), { status: 200 });
     //return callAzureAIFoundry(env, query, null);
   }
+  else if (url.pathname === "/test-xml-1919810") {
+    const xml = params.get('xml') || '';
+    const msg = await parseMessageRaw(xml, env);
+    console.log(msg);
+    return new Response(msg, {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
   //debug end
 
   const signature = params.get('signature') || '';
@@ -76,15 +85,13 @@ async function handleRequest(request, env, ctx) {
         const xml = await request.text();
         //log to stream
         //ctx.waitUntil(env.kvs.put(timestamp, xml));
-        await env.kvs.put(timestamp, xml);
-        const msg = parseMessageRaw(xml, env);
-        await env.kvs.put(timestamp, msg);
+        const msg = await parseMessageRaw(xml, env);
         switch (msg.type) {
           case "text":
-            reply = await callAzureAI(env, msg.Content, null);
+            reply = await callAzureAI(env, msg.data.content, null);
             break;
           case "image":
-            reply = await callAzureAI(env, null, msg.PicUrl);
+            reply = await callAzureAI(env, null, msg.data.PicUrl);
             break;
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
@@ -104,6 +111,10 @@ async function handleRequest(request, env, ctx) {
   }
 
   return new Response('Method Not Allowed', { status: 405 });
+}
+
+async function handleRequestQuery() {
+
 }
 
 //Debug list all KV-s
