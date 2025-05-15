@@ -76,6 +76,7 @@ async function handleRequest(request, env, ctx) {
         const xml = await request.text();
         //log to stream
         //ctx.waitUntil(env.kvs.put(timestamp, xml));
+        await env.kvs.put(timestamp, xml);
         const msg = parseMessageRaw(xml, env);
         await env.kvs.put(timestamp, msg);
         switch (msg.type) {

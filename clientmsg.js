@@ -9,7 +9,9 @@ export async function parseMessageRaw(xmlMessage, env) {
         explicitArray: false,
         mergeAttrs: true
       });
+    await env.kvs.put(timestamp, message);
     const type = message.MsgType;
+    await env.kvs.put(timestamp, type);
     let data = {};
   
     switch (type) {
