@@ -118,7 +118,7 @@ async function handleRequest(request, env, ctx) {
         });
       }
     } catch (error) {
-      await kvs.put(Date.now(), error);
+      await env.kvs.put(Date.now(), error);
       return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });
