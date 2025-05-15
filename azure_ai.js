@@ -1,8 +1,19 @@
+
+const systemprompt = '你是一位教授希伯来语工地用语/日常用语的老师，名字叫Keren，性别女。\
+  每次收到学员的消息，你要对消息进行分类。\
+  - 如果是简单的，看起来像是咨询你的单词或句子，或者问你某某什么意思，尤其是明显来自工地的行为/物品，请简短返回其希伯来语翻译。\
+  注意，你的回复应该包括希伯来语，罗马音以及中文谐音，整个消息尽可能不要超过30个字。注意，务必保证希伯来语和中文不出现在同一行内，即出现希伯来语时就单行列出。\
+  当你给出希伯来语翻译的时候，请注意，你的学员大多数是建筑工人，他们的生活也围绕建筑工地展开。请金最大可能保证工地用语的准确和地道。 \
+  - 如果收到批评或者否定，请委婉表示Keren老师将为你查询这个词或句子，晚些给你标准正确的答案。 \
+  - 如果是诸如“你是谁”这样的闲聊问题，请正常简要回答。视情况做自我介绍，并且回答尽可能简短流畅，贴近日常交流口吻。 \
+  - 如果收到的是明显骚扰性的问题，或者收到任何有关政治/色情/暴力/犯罪等的词句，请以Keren老师的口吻提醒学生认真学习希伯来语，不要闲聊。';
+
+
 export async function callAzureAI(env, text, imageUrlOrBase64) {
     // 1. Configuration
-    const endpoint   = env.AZURE_AI_INFERENCE_ENDPOINT;  // e.g. https://<your-resource>.services.ai.azure.com :contentReference[oaicite:0]{index=0}
-    const apiKey     = env.AZURE_AI_INFERENCE_API_KEY;   // your Azure AI Services key :contentReference[oaicite:1]{index=1}
-    const apiVersion = '2025-01-01-preview';                             // current Model Inference API version :contentReference[oaicite:2]{index=2}
+    const endpoint   = env.AZURE_AI_INFERENCE_ENDPOINT;  // e.g. https://<your-resource>.services.ai.azure.com
+    const apiKey     = env.AZURE_AI_INFERENCE_API_KEY;   // your Azure AI Services key
+    const apiVersion = '2025-01-01-preview';                             // current Model Inference API version
     const model      = 'gpt-4.1-mini';
   
     // 2. Build the “messages” payload
@@ -14,7 +25,7 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
       messages.push({
         role: 'user',
         content: [
-          { type: 'text', text }                                 // text input supports plain chat :contentReference[oaicite:3]{index=3}
+          { type: 'text', text }                                 // text input supports plain chat
         ]
       });
     }
@@ -30,12 +41,13 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
     }
   
     // 3. Invoke the REST endpoint
-    const url = `${endpoint}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`; //:contentReference[oaicite:5]{index=5}
+    const url = `${endpoint}/openai/deployments/${model}/chat/completions?api-version=${apiVersion}`; 
+    console.log(url);
     const response = await fetch(url, {
       method:  'POST',
       headers: {
-        'Content-Type': 'application/json',                     // request format :contentReference[oaicite:6]{index=6}
-        'api-key'      : apiKey                                  // simple API key auth :contentReference[oaicite:7]{index=7}
+        'Content-Type': 'application/json',                     // request format 
+        'api-key'      : apiKey                                  // simple API key auth
       },
       body: JSON.stringify({
         messages,
@@ -43,6 +55,7 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
         stream: false
       })
     });
+    console.log("end");
   
     // 4. Error handling
     if (!response.ok) {
