@@ -1,3 +1,4 @@
+import { AzureOpenAI } from "openai";
 
 const systemPrompt = '你是一位教授希伯来语工地用语/日常用语的老师，名字叫Keren，性别女。\
   每次收到学员的消息，你要对消息进行分类。\
@@ -13,11 +14,15 @@ const imagePrompt = '根据图片内容作出回答。\
   - 如果图片是一篇希伯来语文档，请将其翻译到中文。 \
   其他的情况讲个笑话。';
 
+export async function execAzureComp(env) {
+
+}
+
 export async function callAzureAI(env, text, imageUrlOrBase64) {
     // 1. Configuration
     const endpoint   = env.AZURE_AI_INFERENCE_ENDPOINT;  // e.g. https://<your-resource>.services.ai.azure.com
     const apiKey     = env.AZURE_AI_INFERENCE_API_KEY;   // your Azure AI Services key
-    const apiVersion = '2025-01-01-preview';                             // current Model Inference API version
+    const apiVersion = '2025-01-01-preview';             // current Model Inference API version
     const model      = 'gpt-4.1-mini';
   
     // 2. Build the “messages” payload
@@ -35,6 +40,7 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
     }
   
     if (imageUrlOrBase64) {
+      console.log(imageUrlOrBase64);
       messages.push({
         role: 'user',
         content: [

@@ -10,6 +10,7 @@ export async function parseMessageRaw(xmlMessage, env) {
         mergeAttrs: true
       })).xml;
     const type = message.MsgType;
+    const meta = { msgId: message.MsgId, fromUser : message.FromUserName, toUser : message.ToUserName };
     console.log(type);
     let data = {};
     switch (type) {
@@ -42,10 +43,11 @@ export async function parseMessageRaw(xmlMessage, env) {
         data = { raw: message };
         break;
     }
-    return {type: type, data: data};
+    return {type: type, meta: meta, data: data};
 }
 
 // 简单正则解析微信 XML 中常用字段
+/*
 export function parseMessage(xml) {
   const result = {};
   // CDATA 标签匹配
@@ -57,3 +59,4 @@ export function parseMessage(xml) {
   if (numMatch) result.CreateTime = numMatch[1];
   return result;
 }
+  */

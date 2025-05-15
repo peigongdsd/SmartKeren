@@ -32,7 +32,6 @@ export default {
 }
 
 
-
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const params = url.searchParams;
@@ -54,12 +53,13 @@ async function handleRequest(request, env, ctx) {
     const xml = params.get('xml') || '';
     const msg = await parseMessageRaw(xml, env);
     let reply = "";
+    console.log(msg);
     switch (msg.type) {
       case "text":
         reply = await callAzureAI(env, msg.data.content, null);
         break;
       case "image":
-        reply = await callAzureAI(env, '', msg.data.PicUrl);
+        reply = await callAzureAI(env, '', msg.data.picUrl);
         break;
       default:
         reply = "对不起，暂时还不支持这种类型的消息";
@@ -100,41 +100,30 @@ async function handleRequest(request, env, ctx) {
         //log to stream
         ctx.waitUntil(env.kvs.put(Date.now(), xml));
         const msg = await parseMessageRaw(xml, env);
-        ctx.waitUntil(env.kvs.put(Date.now()+1, msg));
         let reply = "";
         switch (msg.type) {
           case "text":
             reply = await callAzureAI(env, msg.data.content, null);
-            ctx.waitUntil(env.kvs.put(Date.now()+2, "text: " + reply));
             break;
           case "image":
-            reply = await callAzureAI(env, null, msg.data.PicUrl);
-            ctx.waitUntil(env.kvs.put(Date.now()+3, "image: " + reply));
+            reply = await callAzureAI(env, null, msg.data.picUrl);
             break;
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
-            ctx.waitUntil(env.kvs.put(Date.now()+4, "unsupported: " + reply));
         }
-        //const replyXml = await buildReply(env, msg);
-        const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
-        ctx.waitUntil(env.kvs.put(Date.now()+5, "reply: " + replyXml));
+        const replyXml = formatMsg(msg.meta.fromUser, msg.meta.toUser, 'text', reply);
         return new Response(replyXml, {
           status: 200,
           headers: { 'Content-Type': 'application/xml' }
         });
       }
     } catch (error) {
-      await env.kvs.put(Date.now()+5, error);
+      ctx.waitUntil(env.kvs.put(Date.now()+5, error));
       return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });
   }
-
   return new Response('Method Not Allowed', { status: 405 });
-}
-
-async function handleRequestQuery() {
-
 }
 
 //Debug list all KV-s
@@ -185,24 +174,7 @@ function formatMsg(toUser, fromUser, type, content) {
   <ToUserName><![CDATA[${toUser}]]></ToUserName>
   <FromUserName><![CDATA[${fromUser}]]></FromUserName>
   <CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>
-  <MsgType><![CDATA[text]]></MsgType>
-  <Content><![CDATA[${content}]]></Content>
-</xml>`;
-}
-
-
-// 构建文本回复
-async function buildReply(env, msg) {
-  const toUser = msg.FromUserName;
-  const fromUser = msg.ToUserName;
-  const now = Math.floor(Date.now() / 1000);
-  //const content = `猫猫虫回答-3：${msg.Content || msg.Event}`;
-  const content = await callAzureAI(env, msg.Content || msg.Event, null);
-  return `<xml>
-  <ToUserName><![CDATA[${toUser}]]></ToUserName>
-  <FromUserName><![CDATA[${fromUser}]]></FromUserName>
-  <CreateTime>${now}</CreateTime>
-  <MsgType><![CDATA[text]]></MsgType>
+  <MsgType><![CDATA[${type}]]></MsgType>
   <Content><![CDATA[${content}]]></Content>
 </xml>`;
 }
