@@ -1,0 +1,28 @@
+{
+    // The name of your Worker
+    "name": "webot0",
+  
+    // Entry point for your Worker code
+    "main": "worker.js",
+  
+    // Date after which breaking changes are disallowed
+    "compatibility_date": "2025-05-15",
+  
+    // Your Cloudflare account ID
+    "account_id": "f411850853a2539ee1f48669e24d9f24",
+  
+    // Bind one or more KV namespaces
+    "kv_namespaces": [
+        {
+            // For critical data
+            "binding": "kv0",
+            "id": "477167de4d3443dbba3107617be8c718"
+        },
+        {
+            // For streamed log
+            "binding": "kvs",
+            "id": "7df548af6bd84f28a493147a666fc162"
+        }
+    ]
+  }
+  
