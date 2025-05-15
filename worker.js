@@ -59,7 +59,7 @@ async function handleRequest(request, env, ctx) {
         reply = await callAzureAI(env, msg.data.content, null);
         break;
       case "image":
-        reply = await callAzureAI(env, null, msg.data.PicUrl);
+        reply = await callAzureAI(env, '', msg.data.PicUrl);
         break;
       default:
         reply = "对不起，暂时还不支持这种类型的消息";
@@ -96,21 +96,25 @@ async function handleRequest(request, env, ctx) {
     try {
       if (hash == signature) {
         const xml = await request.text();
+        
         //log to stream
-        ctx.waitUntil(env.kvs.put(timestamp, xml));
+        ctx.waitUntil(env.kvs.put(Date.now(), xml));
         const msg = await parseMessageRaw(xml, env);
+        ctx.waitUntil(env.kvs.put(Date.now(), msg));
         let reply = "";
         switch (msg.type) {
           case "text":
             reply = await callAzureAI(env, msg.data.content, null);
+            ctx.waitUntil(env.kvs.put(Date.now(), "text: " + reply));
             break;
           case "image":
             reply = await callAzureAI(env, null, msg.data.PicUrl);
+            ctx.waitUntil(env.kvs.put(Date.now(), "image: " + reply));
             break;
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
+            ctx.waitUntil(env.kvs.put(Date.now(), "unsupported: " + reply));
         }
-        ctx.waitUntil(env.kvs.put(Date.now(), reply));
         //const replyXml = await buildReply(env, msg);
         const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
         return new Response(replyXml, {
