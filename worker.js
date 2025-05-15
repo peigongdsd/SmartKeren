@@ -46,6 +46,7 @@ async function handleRequest(request, env, ctx) {
   }
   else if (url.pathname === "/test-ai-1919810") {
     const query = params.get('query') || '';
+    const pic = params.get('picurl') || '';
     return new Response(await callAzureAI(env, query, null), { status : 200 });
     //return callAzureAIFoundry(env, query, null);
   }
@@ -73,8 +74,9 @@ async function handleRequest(request, env, ctx) {
     if (hash == signature) {
       const xml = await request.text();
       //log to stream
-      ctx.waitUntil(env.kvs.put(timestamp, xml));
+      //ctx.waitUntil(env.kvs.put(timestamp, xml));
       const msg = parseMessageRaw(xml);
+      ctx.waitUntil(env.kvs.put(timestamp, msg));
       switch (msg.type) {
         case "text":
           reply = await callAzureAI(env, msg.Content, null);
