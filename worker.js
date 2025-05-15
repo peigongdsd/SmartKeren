@@ -2,11 +2,11 @@ import { callAzureAI } from "./azure_ai.js";
 import { parseMessageRaw, parseMessage } from "./clientmsg.js";
 import { DurableObject } from "cloudflare:workers";
 export class AgentFlashMemory extends DurableObject {
-    constructor(ctx, env) {
-      // Required, as we're extending the base class.
-      super(ctx, env);
-      this.sql = ctx.storage.sql;
-      this.sql.exec(`
+  constructor(ctx, env) {
+    // Required, as we're extending the base class.
+    super(ctx, env);
+    this.sql = ctx.storage.sql;
+    this.sql.exec(`
         CREATE TABLE IF NOT EXISTS memory (
           MsgId     INTEGER PRIMARY KEY,
           UserName  TEXT NOT NULL,
@@ -16,14 +16,14 @@ export class AgentFlashMemory extends DurableObject {
           Extra     TEXT
         );
       `);
-    }
-    async sayHello() {
-        let result = this.ctx.storage.sql
-          .exec("SELECT 'Hello, World!' as greeting")
-          .one();
-        return result.greeting;
-      }
   }
+  async sayHello() {
+    let result = this.ctx.storage.sql
+      .exec("SELECT 'Hello, World!' as greeting")
+      .one();
+    return result.greeting;
+  }
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -47,7 +47,7 @@ async function handleRequest(request, env, ctx) {
   else if (url.pathname === "/test-ai-1919810") {
     const query = params.get('query') || '';
     const pic = params.get('picurl') || '';
-    return new Response(await callAzureAI(env, query, null), { status : 200 });
+    return new Response(await callAzureAI(env, query, null), { status: 200 });
     //return callAzureAIFoundry(env, query, null);
   }
   //debug end
@@ -71,28 +71,33 @@ async function handleRequest(request, env, ctx) {
 
   // 2. POST 请求：校验签名后处理消息
   if (request.method === 'POST') {
-    if (hash == signature) {
-      const xml = await request.text();
-      //log to stream
-      //ctx.waitUntil(env.kvs.put(timestamp, xml));
-      const msg = parseMessageRaw(xml);
-      ctx.waitUntil(env.kvs.put(timestamp, msg));
-      switch (msg.type) {
-        case "text":
-          reply = await callAzureAI(env, msg.Content, null);
-          break;
-        case "image":
-          reply = await callAzureAI(env, null, msg.PicUrl);
-          break;
-        default:
-          reply = "对不起，暂时还不支持这种类型的消息";
+    try {
+      if (hash == signature) {
+        const xml = await request.text();
+        //log to stream
+        //ctx.waitUntil(env.kvs.put(timestamp, xml));
+        const msg = parseMessageRaw(xml);
+        ctx.waitUntil(env.kvs.put(timestamp, msg));
+        switch (msg.type) {
+          case "text":
+            reply = await callAzureAI(env, msg.Content, null);
+            break;
+          case "image":
+            reply = await callAzureAI(env, null, msg.PicUrl);
+            break;
+          default:
+            reply = "对不起，暂时还不支持这种类型的消息";
+        }
+        //const replyXml = await buildReply(env, msg);
+        const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, text, reply);
+        return new Response(replyXml, {
+          status: 200,
+          headers: { 'Content-Type': 'application/xml' }
+        });
       }
-      //const replyXml = await buildReply(env, msg);
-      const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, text, reply);
-      return new Response(replyXml, {
-        status: 200,
-        headers: { 'Content-Type': 'application/xml' }
-      });
+    } catch (error) {
+      kvs.put(Date.now(), error);
+      return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });
   }
@@ -106,9 +111,9 @@ async function debug_inspectkv(url, kv, kvstream, ctx) {
   let cursor;
   const entries = [];
   do {
-    const list = await kv.list({ 
-      cursor, 
-      limit: 1000 
+    const list = await kv.list({
+      cursor,
+      limit: 1000
     });
     cursor = list.cursor;
     // collect key names
