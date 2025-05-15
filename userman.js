@@ -39,9 +39,7 @@ export async function dbcommit(db, transactions) {
 }
 
 export async function userExpired(env, openid) {
-
-    const permission = await env.admins.get(openid);
-    if (permission === "Admin") {
+    if (await isAdmin(env, openid)) {
         return false;
     } else {
         const row = await db
@@ -58,5 +56,8 @@ export async function userExpired(env, openid) {
     }
 }
 
-
+export async function isAdmin(env, openid) {
+    const permission = await env.admins.get(openid);
+    return (permission === "Admin") 
+}
 

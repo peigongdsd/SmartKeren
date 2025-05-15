@@ -1,5 +1,6 @@
 import { callAzureAI } from "./azure_ai.js";
-import { parseMessageRaw, parseMessage } from "./clientmsg.js";
+import { parseMessageRaw } from "./clientmsg.js";
+import { isAdmin } from "./userman.js";
 import { DurableObject } from "cloudflare:workers";
 export class AgentFlashMemory extends DurableObject {
   constructor(ctx, env) {
@@ -31,10 +32,13 @@ export default {
   }
 }
 
-
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
   const params = url.searchParams;
+
+  if (url.pathname === "/fetch_access_token") {
+    // Fetch Access Token and stor
+  }
 
   //for debug only
   if (url.pathname === "/list-all-kv0-1919810") {
@@ -46,31 +50,8 @@ async function handleRequest(request, env, ctx) {
   else if (url.pathname === "/test-ai-1919810") {
     const query = params.get('query') || '';
     const pic = params.get('picurl') || '';
-    return new Response(await callAzureAI(env, query, null), { status: 200 });
+    return new Response(await callAzureAI(env, query, picurl), { status: 200 });
     //return callAzureAIFoundry(env, query, null);
-  }
-  else if (url.pathname === "/test-xml-1919810") {
-    const xml = params.get('xml') || '';
-    const msg = await parseMessageRaw(xml, env);
-    let reply = "";
-    console.log(msg);
-    switch (msg.type) {
-      case "text":
-        reply = await callAzureAI(env, msg.data.content, null);
-        break;
-      case "image":
-        reply = await callAzureAI(env, '', msg.data.picUrl);
-        break;
-      default:
-        reply = "对不起，暂时还不支持这种类型的消息";
-    }
-    //const replyXml = await buildReply(env, msg);
-    console.log(reply);
-    const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, 'text', reply);
-    return new Response(replyXml, {
-      status: 200,
-      headers: { 'Content-Type': 'application/xml' }
-    });
   }
   //debug end
 
@@ -96,13 +77,25 @@ async function handleRequest(request, env, ctx) {
     try {
       if (hash == signature) {
         const xml = await request.text();
-        
         //log to stream
         ctx.waitUntil(env.kvs.put(Date.now(), xml));
         const msg = await parseMessageRaw(xml, env);
         let reply = "";
         switch (msg.type) {
           case "text":
+            const clientoid = msg.meta.fromUser;
+            if (isAdmin(env, clientoid)) {
+              // All priviledged instructions must start with #
+              if (msg.data.content.charAt(0) === '#') {
+                // Escape to admin mode and do something
+                const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
+                //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
+                return new Response(replyXml, {
+                  status: 200,
+                  headers: { 'Content-Type': 'application/xml' }
+                });
+              }
+            }
             reply = await callAzureAI(env, msg.data.content, null);
             break;
           case "image":
@@ -111,14 +104,15 @@ async function handleRequest(request, env, ctx) {
           default:
             reply = "对不起，暂时还不支持这种类型的消息";
         }
-        const replyXml = formatMsg(msg.meta.fromUser, msg.meta.toUser, 'text', reply);
+        const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, reply);
+
         return new Response(replyXml, {
           status: 200,
           headers: { 'Content-Type': 'application/xml' }
         });
       }
     } catch (error) {
-      ctx.waitUntil(env.kvs.put(Date.now()+5, error));
+      ctx.waitUntil(env.kvs.put(Date.now() + 5, error));
       return new Response('success', { status: 200 });
     }
     return new Response('Invalid signature', { status: 403 });
@@ -168,13 +162,32 @@ async function sha1(str) {
     .join('');
 }
 
-
-function formatMsg(toUser, fromUser, type, content) {
+function formatTextMsg(toUser, fromUser, content) {
   return `<xml>
   <ToUserName><![CDATA[${toUser}]]></ToUserName>
   <FromUserName><![CDATA[${fromUser}]]></FromUserName>
   <CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>
-  <MsgType><![CDATA[${type}]]></MsgType>
+  <MsgType><![CDATA[text]]></MsgType>
   <Content><![CDATA[${content}]]></Content>
 </xml>`;
+}
+
+function formatRichMsgOneshot(toUser, fromUser, title, description, picUrl, jumpUrl) {
+  return `<xml>
+  <ToUserName><![CDATA[${toUser}]]></ToUserName>
+  <FromUserName><![CDATA[${fromUser}]]></FromUserName>
+  <CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>
+  <MsgType><![CDATA[news]]></MsgType>
+  <ArticleCount>1</ArticleCount>
+  <Articles>
+    <item>
+      <Title><![CDATA[${title}]]></Title>
+      <Description><![CDATA[${description}]]></Description>
+      <PicUrl><![CDATA[${picUrl}]]></PicUrl>
+      <Url><![CDATA[${jumpUrl}]]></Url>
+    </item>
+  </Articles>
+</xml>
+
+`;
 }
