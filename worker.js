@@ -41,6 +41,11 @@ async function handleRequest(request, env, ctx) {
   }
 
   //for debug only
+  if (url.pathname === "/subs") {
+    return new Response(arams.get('reserved') || 'none', {
+      headers: { "Content-Type": "text/plain;charset=UTF-8" }
+    });
+  }
   if (url.pathname === "/list-all-kv0-1919810") {
     return debug_inspectkv(url, env.kv0, env.kvs, ctx);
   }
@@ -88,9 +93,10 @@ async function handleRequest(request, env, ctx) {
               // All priviledged instructions must start with #
               if (msg.data.content.charAt(0) === '#') {
                 // Escape to admin mode and do something
-                const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
+                const subsurl = formatOneshotSubs(env.appid, "0", "0", "https://webot0.krusllee.com/subs", "tokenb80vt7c0t");
+                const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', subsurl);
                 //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
-                return new Response(replyXml, {
+                return new Response(subsurl, {
                   status: 200,
                   headers: { 'Content-Type': 'application/xml' }
                 });
@@ -162,6 +168,10 @@ async function sha1(str) {
     .join('');
 }
 
+function formatOneshotSubs(appid, scene, template_id, redirect_url, reserved) {
+  return `https://mp.weixin.qq.com/mp/subscribemsg?action=get_confirm&appid=${appid}&scene=${scene}&template_id=${template_id}&redirect_url=${redirect_url}&reserved=${reserved}#wechat_redirect`;
+}
+
 function formatTextMsg(toUser, fromUser, content) {
   return `<xml>
   <ToUserName><![CDATA[${toUser}]]></ToUserName>
@@ -187,7 +197,5 @@ function formatRichMsgOneshot(toUser, fromUser, title, description, picUrl, jump
       <Url><![CDATA[${jumpUrl}]]></Url>
     </item>
   </Articles>
-</xml>
-
-`;
+</xml>`;
 }
