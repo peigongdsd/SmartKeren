@@ -1,10 +1,37 @@
 import { callAzureAI } from "./azure_ai.js";
+import { parseMessageRaw, parseMessage } from "./clientmsg.js";
+import { DurableObject } from "cloudflare:workers";
+export class AgentFlashMemory extends DurableObject {
+    constructor(ctx, env) {
+      // Required, as we're extending the base class.
+      super(ctx, env);
+      this.sql = ctx.storage.sql;
+      this.sql.exec(`
+        CREATE TABLE IF NOT EXISTS memory (
+          MsgId     INTEGER PRIMARY KEY,
+          UserName  TEXT NOT NULL,
+          Timestamp INTEGER NOT NULL,
+          MsgType   TEXT NOT NULL CHECK (MsgType IN ('Text','Pic','Voice')),
+          Content   TEXT,
+          Extra     TEXT
+        );
+      `);
+    }
+    async sayHello() {
+        let result = this.ctx.storage.sql
+          .exec("SELECT 'Hello, World!' as greeting")
+          .one();
+        return result.greeting;
+      }
+  }
 
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, env, ctx);
   }
 }
+
+
 
 async function handleRequest(request, env, ctx) {
   const url = new URL(request.url);
@@ -22,6 +49,7 @@ async function handleRequest(request, env, ctx) {
     return new Response(await callAzureAI(env, query, null), { status : 200 });
     //return callAzureAIFoundry(env, query, null);
   }
+  //debug end
 
   const signature = params.get('signature') || '';
   const timestamp = params.get('timestamp') || '';
@@ -46,8 +74,19 @@ async function handleRequest(request, env, ctx) {
       const xml = await request.text();
       //log to stream
       ctx.waitUntil(env.kvs.put(timestamp, xml));
-      const msg = parseMessage(xml);
-      const replyXml = await buildReply(env, msg);
+      const msg = parseMessageRaw(xml);
+      switch (msg.type) {
+        case "text":
+          reply = await callAzureAI(env, msg.Content, null);
+          break;
+        case "image":
+          reply = await callAzureAI(env, null, msg.PicUrl);
+          break;
+        default:
+          reply = "对不起，暂时还不支持这种类型的消息";
+      }
+      //const replyXml = await buildReply(env, msg);
+      const replyXml = formatMsg(msg.FromUserName, msg.ToUserName, text, reply);
       return new Response(replyXml, {
         status: 200,
         headers: { 'Content-Type': 'application/xml' }
@@ -58,7 +97,6 @@ async function handleRequest(request, env, ctx) {
 
   return new Response('Method Not Allowed', { status: 405 });
 }
-
 
 //Debug list all KV-s
 async function debug_inspectkv(url, kv, kvstream, ctx) {
@@ -102,18 +140,17 @@ async function sha1(str) {
     .join('');
 }
 
-// 简单正则解析微信 XML 中常用字段
-function parseMessage(xml) {
-  const result = {};
-  // CDATA 标签匹配
-  xml.replace(/<(\w+)><!\[CDATA\[(.*?)\]\]><\/\1>/g, (_, tag, content) => {
-    result[tag] = content;
-  });
-  // 数字标签匹配
-  const numMatch = xml.match(/<CreateTime>(\d+)<\/CreateTime>/);
-  if (numMatch) result.CreateTime = numMatch[1];
-  return result;
+
+function formatMsg(toUser, fromUser, type, content) {
+  return `<xml>
+  <ToUserName><![CDATA[${toUser}]]></ToUserName>
+  <FromUserName><![CDATA[${fromUser}]]></FromUserName>
+  <CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>
+  <MsgType><![CDATA[text]]></MsgType>
+  <Content><![CDATA[${content}]]></Content>
+</xml>`;
 }
+
 
 // 构建文本回复
 async function buildReply(env, msg) {

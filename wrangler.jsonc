@@ -7,6 +7,9 @@
   
     // Date after which breaking changes are disallowed
     "compatibility_date": "2025-05-15",
+    "compatibility_flags": [
+        "nodejs_compat"
+      ],
   
     // Your Cloudflare account ID
     "account_id": "f411850853a2539ee1f48669e24d9f24",
@@ -24,7 +27,21 @@
             "id": "7df548af6bd84f28a493147a666fc162"
         }
     ],
-
+    
+    "durable_objects": {
+        "bindings": [
+          {
+            "name": "agentFlashMem",
+            "class_name": "AgentFlashMemory"
+          }
+        ]
+    },
+    "migrations": [
+        {
+          "tag": "v1",
+          "new_classes": ["AgentFlashMemory"]
+        }
+    ],
     "vars": {}
   }
   
