@@ -38,6 +38,7 @@ Table transactions
 
 
 export class AgentFlashMemory extends DurableObject {
+  sql;
   constructor(ctx, env) {
     // Required, as we're extending the base class.
     super(ctx, env);
@@ -90,6 +91,7 @@ export class AgentFlashMemory extends DurableObject {
       CREATE INDEX IF NOT EXISTS idx_backendMsg_MsgIdRelated
         ON backendMsg (MsgIdRelated);
     `);
+    return this.sql;
   }
 
   /**
@@ -106,7 +108,7 @@ export class AgentFlashMemory extends DurableObject {
  * @param {number}  deadKnock   — number of knocks before we consider “dead”
  * @param {number}  deadTimeout — seconds after timestamp before we consider “dead”
  * 
- * return { state: "waiting"/"replied"/"dead" }
+ * return { state: /"waiting"/"replied"/"dead" }
  */
   async pushMsg(msgId
     , timestamp
@@ -383,11 +385,18 @@ async function handle(request, env, ctx) {
 
 async function handleDebug(urlpath, params, env, ctx) {
   switch (urlpath.at(0)) {
+    
     case 'subs':
       return new Response(
         params.get('reserved') || 'none',
         { headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }
       );
+
+    case 'test-durable':
+      const id = env.agentFlashMemory.idFromName("foo");
+      const stub = env.agentFlashMemory.get(id);
+      console.log(stub);
+      return new Response("Success", { status: 200 });
 
     case 'list-all-kv0':
       return await debug_inspectkv(env.kv0, env.kvs, ctx);
@@ -395,7 +404,7 @@ async function handleDebug(urlpath, params, env, ctx) {
     case 'list-all-kvs':
       return await debug_inspectkv(env.kvs, env.kvs, ctx);
 
-    case 'test-ai': 
+    case 'test-ai':
       const query = params.get('query') || '';
       const pic = params.get('picurl') || '';
       // note: pass `pic` (not `picurl`) unless your function expects the raw param name
@@ -422,20 +431,18 @@ async function handleMessage(xml, env, ctx) {
   ctx.waitUntil(env.kvs.put(Date.now(), xml));
   const msg = await parseMessageRaw(xml, env);
   let reply = "";
+
+  // first check if message is already replied
+  //  pushmsg, if already replied then pass
+  // then wait until reply 
+
   switch (msg.type) {
     case "text":
       const clientoid = msg.meta.fromUser;
       if (isAdmin(env, clientoid)) {
         // All priviledged instructions must start with #
         if (msg.data.content.charAt(0) === '#') {
-          // Escape to admin mode and do something
-          const subsurl = formatOneshotSubs(env.appid, "0", "0", "https://webot0.krusllee.com/subs", "tokenb80vt7c0t");
-          const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
-          //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
-          return new Response(subsurl, {
-            status: 200,
-            headers: { 'Content-Type': 'application/xml' }
-          });
+          return await handleAdmin(msg.slice(1));
         }
       }
       reply = await callAzureAI(env, msg.data.content, null);
@@ -454,8 +461,17 @@ async function handleMessage(xml, env, ctx) {
 
 }
 
-async function handleAdmin() {
-
+async function handleAdmin(msg) {
+  if (msg.data.content.charAt(0) === '#') {
+    // Escape to admin mode and do something
+    const subsurl = formatOneshotSubs(env.appid, "0", "0", "https://webot0.krusllee.com/subs", "tokenb80vt7c0t");
+    const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
+    //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
+    return new Response(replyXml, {
+      status: 200,
+      headers: { 'Content-Type': 'application/xml' }
+    });
+  }
 }
 
 

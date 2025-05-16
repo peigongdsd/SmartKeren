@@ -1,65 +1,59 @@
 {
-    // The name of your Worker
-    "name": "webot0",
-  
-    // Entry point for your Worker code
-    "main": "worker.js",
-  
-    // Date after which breaking changes are disallowed
-    "compatibility_date": "2025-05-08",
-    "compatibility_flags": [
-        "nodejs_compat"
-      ],
-  
-    // Your Cloudflare account ID
-    "account_id": "f411850853a2539ee1f48669e24d9f24",
-
-    //"observability": {
-    //  "enabled": true,
-    //  "head_sampling_rate": 1
-    //},
-    
-    // Bind one or more KV namespaces
-    "kv_namespaces": [
-        {
-            // For critical data
-            "binding": "kv0",
-            "id": "477167de4d3443dbba3107617be8c718"
-        },
-        {
-            // For streamed log
-            "binding": "kvs",
-            "id": "7df548af6bd84f28a493147a666fc162"
-        },
-        {
-            // Powered Users, Admin | Suspend
-          "binding": "admins",
-          "id": "5ba71c87ed4e4cea9700830a9ab45885"
-        }
-    ],
-
-    "d1_databases": [
-      {
-        "binding": "db0",
-        "database_name": "users",
-        "database_id": "426dfbe3-b725-41f8-adb5-30db1f957d5a"
-      }
-    ],
-    
-    "durable_objects": {
-        "bindings": [
-          {
-            "name": "agentFlashMem",
-            "class_name": "AgentFlashMemory"
-          }
-        ]
+  // The name of your Worker
+  "name": "webot0",
+  // Entry point for your Worker code
+  "main": "worker.js",
+  // Date after which breaking changes are disallowed
+  "compatibility_date": "2025-05-08",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  // Your Cloudflare account ID
+  "account_id": "f411850853a2539ee1f48669e24d9f24",
+  //"observability": {
+  //  "enabled": true,
+  //  "head_sampling_rate": 1
+  //},
+  // Bind one or more KV namespaces
+  "kv_namespaces": [
+    {
+      // For critical data
+      "binding": "kv0",
+      "id": "477167de4d3443dbba3107617be8c718"
     },
-    "migrations": [
-        {
-          "tag": "v1",
-          "new_classes": ["AgentFlashMemory"]
-        }
-    ],
-    "vars": {}
-  }
-  
+    {
+      // For streamed log
+      "binding": "kvs",
+      "id": "7df548af6bd84f28a493147a666fc162"
+    },
+    {
+      // Powered Users, Admin | Suspend
+      "binding": "admins",
+      "id": "5ba71c87ed4e4cea9700830a9ab45885"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "db0",
+      "database_name": "users",
+      "database_id": "426dfbe3-b725-41f8-adb5-30db1f957d5a"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "agentFlashMem",
+        "class_name": "AgentFlashMemory"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "AgentFlashMemory"
+      ]
+    }
+  ],
+  "vars": {}
+}
