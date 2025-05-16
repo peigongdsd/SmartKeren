@@ -1,25 +1,34 @@
+import { stringifyParsedURL } from "ufo";
 import { callAzureAI } from "./azure_ai.js";
-import { parseMessageRaw } from "./clientmsg.js";
+import { parseMessage, parseMessageRaw } from "./clientmsg.js";
 import { isAdmin } from "./userman.js";
 import { DurableObject } from "cloudflare:workers";
 
-const deadTime = 3;
-const deadKnock = 2;
+//const deadTime = 3;
+//const defaultTTL = 2;
+
 
 /*
+NEW DESIGN: Separated namespace for each openid, greatly simplified
+
+Table meta (only one record, read only)
+  -- uuid generate on 
+  uuid (uuid, primary)
+  remoteOID (text)
+  localOID (text)
+  -- enroll unix timestamp on created
+  since (int64)
+
+
 Table clientMsg
   MsgId (Int64, primary, no null) |
   Timestamp (Int64, indexed, no null) |
-  RemoteOID (Int64, indexed, no null) |
-  LocalOID (Int64, no null) |
   MsgType (Enum from "text"/"image") |
   Content (Text) |
   Extra (Text) |
   Replied (BOOL, no null, default false) |
   Knock (small Int, no null, default 0)
-*/
 
-/*
 Table backendMsg
   MsgidRelated (Int64, no null) |
   Sequence (Int64, no null, default 0 ) |
@@ -28,58 +37,57 @@ Table backendMsg
   ContentVoice (Voice, nullable) |
   
   primary key associate (MsgidRelated, Sequence)
+
 */
-
-/*
-Table transactions 
-  TBD
-*/
-
-
 
 export class AgentFlashMemory extends DurableObject {
   sql;
   constructor(ctx, env) {
+    console.log(ctx.id.name);
+    let identifiers = JSON.parse(ctx.id.name);
     // Required, as we're extending the base class.
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`
 
+      -- maybe we do not need this
       PRAGMA foreign_keys = ON;
+
+      CREATE TABLE IF NOT EXISTS meta (
+        RemoteOID TEXT,                  -- free-form text
+        LocalOID  TEXT,                  -- free-form text
+        CreateOn  INTEGER PRIMARY KEY     -- signed 64-bit, perfect for Unix timestamps
+      );
+
+      INSERT OR REPLACE INTO meta(remoteOID, localOID, CreateOn)
+      VALUES(${identifiers.remoteOID}, ${identifiers.localOID}, ${Date.now()});
 
       -- clientMsg table
       CREATE TABLE IF NOT EXISTS clientMsg (
         MsgId       INTEGER       NOT NULL PRIMARY KEY,
-        -- Timestamp is in seconds!!
-        Timestamp   INTEGER       NOT NULL,
-        RemoteOID   TEXT          NOT NULL,
-        LocalOID    TEXT          NOT NULL,
+        -- CreateTime is in seconds, from tencent
+        CreateTime  INTEGER       NOT NULL,
         MsgType     TEXT          NOT NULL
-                          CHECK (MsgType IN ('text', 'image')),
+                          CHECK (MsgType IN ('text', 'image', 'voice', 'video', 'shortvideo','location', 'link')),
         -- text = text, image = picUrl
-        Content     TEXT,
-        Extra       TEXT,
+        RawJSON     TEXT          NOT NULL,
         -- 0 = not replied, 1 = replied
-        Replied     INTEGER       NOT NULL DEFAULT 0, 
-        Knock       INTEGER       NOT NULL DEFAULT 0
+        Replied     INTEGER       NOT NULL DEFAULT 0
       );
 
       -- Indexes for clientMsg
-      CREATE INDEX IF NOT EXISTS idx_clientMsg_Timestamp
-        ON clientMsg (Timestamp);
-      CREATE INDEX IF NOT EXISTS idx_clientMsg_RemoteOID
-        ON clientMsg (RemoteOID);
+      CREATE INDEX IF NOT EXISTS idx_clientMsg_CreateTime
+        ON clientMsg (CreateTime);
 
 
       -- backendMsg table with Sequence as primary key
       CREATE TABLE IF NOT EXISTS backendMsg (
         MsgIdRelated   INTEGER   NOT NULL,
         -- Multiple replies must be inserted atomically!!!
-        Sequence       INTEGER   NOT NULL PRIMARY KEY,
+        Sequence       INTEGER   NOT NULL PRIMARY KEY AUTOINCREMENT,
         MsgType        TEXT      NOT NULL
-                           CHECK (MsgType IN ('text','voice')),
-        ContentText    TEXT,
-        ContentVoice   BLOB,
+                           CHECK (MsgType IN ('text','voice','image')),
+        RawJSON    TEXT,
         -- Link the two tables
         FOREIGN KEY (MsgIdRelated)
           REFERENCES clientMsg (MsgId)
@@ -91,104 +99,90 @@ export class AgentFlashMemory extends DurableObject {
       CREATE INDEX IF NOT EXISTS idx_backendMsg_MsgIdRelated
         ON backendMsg (MsgIdRelated);
     `);
-    return this.sql;
+
   }
 
   /**
- * Push or knock a message, with automatic “dead” handling.
- * New message: push; Old message: Knock; Deadline message: Handle
- *
- * @param {number}  msgId
- * @param {number}  timestamp   — seconds since epoch when msg was first seen
- * @param {number}  remoteOID
- * @param {number}  localOID
- * @param {string}  msgType     — 'text' or 'image'
- * @param {string}  content
- * @param {string}  extra
- * @param {number}  deadKnock   — number of knocks before we consider “dead”
- * @param {number}  deadTimeout — seconds after timestamp before we consider “dead”
- * 
- * return { state: /"waiting"/"replied"/"dead" }
- */
+   * Dump every row from meta, clientMsg, and backendMsg.
+   * @returns {Promise<{ meta: any[]; clientMsg: any[]; backendMsg: any[] }>}
+   */
+  async debug_dumpall() {
+    // Get all rows from meta
+    const metaRows = this.sql
+      .exec(`SELECT RemoteOID, LocalOID, CreateOn FROM meta`)
+      .all();                                        // :contentReference[oaicite:0]{index=0}
+
+    // Get all rows from clientMsg
+    const clientRows = this.sql
+      .exec(`SELECT MsgId, CreateTime, MsgType, RawJSON, Replied FROM clientMsg`)
+      .all();                                        // :contentReference[oaicite:1]{index=1}
+
+    // Get all rows from backendMsg
+    const backendRows = this.sql
+      .exec(`SELECT MsgIdRelated, Sequence, MsgType, RawJSON FROM backendMsg`)
+      .all();                                        // :contentReference[oaicite:2]{index=2}
+
+    // Return combined result
+    return {
+      meta: metaRows.results,
+      clientMsg: clientRows.results,
+      backendMsg: backendRows.results,
+    };
+  }
+
+
+  /**
+   * Push a message record into clientMsg with initial state.
+   * @param {number} msgId - Unique identifier for the message
+   * @param {number} createTime - Epoch seconds when the message was first seen
+   * @param {'text'|'image'|'voice'|'video'|'shortvideo'|'location'|'link'} msgType
+   * @param {object} rawJSON - The parsed JSON content of the message
+   * @returns {Promise<{ state: 'pending' | 'replied' }>}
+   */
   async pushMsg(msgId
-    , timestamp
-    , remoteOID
-    , localOID
+    , createTime
     , msgType
-    , content
-    , extra
-    , deadKnock
-    , deadTimeout) {
-    /*
-    write this code. Push message into clientMsg. Do most of works in SQL to avoid latency from code to durable object
-      If msgid already existed then
-        If replied then return { "state": "replied" }
-        else {
-          knock = knock + 1
-          if (knock >= deadknock) && ( currenttime in seconds >= deadTimeout + timestamp ) then { deadHandler() }
-          else return { "state" : "waiting", "knock" : knock }
-        }
-      otherwise return { "state" : "waiting", "knock" : 0 }
-    */
+    , rawJSON
+  ) {
 
     // 1. Try to insert as a new message (Replied=0, Knock=0). If it already exists, changes === 0.
     const insertResult = await this.sql
       .prepare(`
         INSERT INTO clientMsg
-          (MsgId, Timestamp, RemoteOID, LocalOID, MsgType, Content, Extra, Replied, Knock)
-        VALUES (?,       ?,         ?,         ?,        ?,       ?,       ?,     0,       0)
+          (MsgId, CreateTime, MsgType, RawJSON)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(MsgId) DO NOTHING
       `)
       .bind(
         msgId,
-        timestamp,
-        remoteOID,
-        localOID,
+        createTime,
         msgType,
-        content,
-        extra
+        JSON.stringify(rawJSON)
       )
       .run();
 
     // 2a. Was a new row inserted? If so, first push → waiting with 0 knocks.
     if (insertResult.changes > 0) {
-      return { state: "waiting" };
+      return { state: "pending" };
+    } else {
+      const row = await this.sql
+        .prepare(`SELECT Replied, Knock FROM clientMsg WHERE MsgId = ?`)
+        .bind(msgId)
+        .first();
+
+      // 3. If already replied, bail out
+      if (row.Replied === 1) {
+        return { state: "replied" };
+      } else
+        return { state: "pending" };
     }
-
-    // 2b. Existing message: fetch its Replied flag and current knock count
-    const row = await this.sql
-      .prepare(`SELECT Replied, Knock FROM clientMsg WHERE MsgId = ?`)
-      .bind(msgId)
-      .first();
-
-    // 3. If already replied, bail out
-    if (row.Replied === 1) {
-      return { state: "replied" };
-    }
-
-    // 4. Otherwise increment knock
-    const newKnock = row.Knock + 1;
-    await this.sql
-      .prepare(`UPDATE clientMsg SET Knock = ? WHERE MsgId = ?`)
-      .bind(newKnock, msgId)
-      .run();
-
-    // 5. Check “dead” condition: too many knocks *and* timed out
-    const now = Math.floor(Date.now() / 1000);
-    if (newKnock >= deadKnock && now >= timestamp + deadTimeout) {
-      // invoke user-provided handler, return its result
-      return { state: "dead" };
-    }
-
-    // 6. Otherwise still waiting
-    return { state: "waiting" };
   }
 
   /**
- * Mark a message as replied.
- * @param {number} msgId
- * @returns {{updated: number}}  // number of rows that were changed (0 or 1)
- */
+   * Mark a message as replied in clientMsg.
+   * @param {number} msgId
+   * @returns {Promise<{ updated: number }>}
+   */
   async replyMsg(msgId) {
     /* set the replied for the msgId to be 1 if msgid exist. Otherwise do nothing.  */
     const result = await this.sql
@@ -205,44 +199,35 @@ export class AgentFlashMemory extends DurableObject {
   }
 
   /**
- * Push a new reply from the backend.
- * Automatically increments Sequence for this MsgIdRelated.
- *
- * @param {number} msgIdRelated
- * @param {'text'|'voice'} msgType
- * @param {string|null} text         — if msgType==='text'
- * @param {Uint8Array|null} voice    — if msgType==='voice'
- * @returns {{ MsgIdRelated: number, Sequence: number }}
- */
-
-  async pushReply(msgIdRelated, msgType, text = null, voice = null) {    // Single-statement insert with built-in sequencing and returning:
-    const row = await this.sql
+   * Insert a new reply into backendMsg, auto-incrementing Sequence.
+   * @param {number} msgIdRelated - The clientMsg.MsgId this reply belongs to
+   * @param {'text'|'voice'|'image'} msgType
+   * @param {object|string|null} rawJSON - The reply content; will be JSON-stringified if object
+   * @returns {Promise<number>} - Number of rows inserted (1 on success)
+   */
+  async pushReply(msgIdRelated, msgType, rawJSON) {    // Single-statement insert with built-in sequencing and returning:
+    const insertResult = await this.sql
       .prepare(`
           INSERT INTO backendMsg
-            (MsgIdRelated, Sequence, MsgType, ContentText, ContentVoice)
-          SELECT ?,                COALESCE(MAX(Sequence), -1) + 1, ?,       ?,      ?
-            FROM backendMsg
-           WHERE MsgIdRelated = ?
-          RETURNING Sequence;
+            (MsgIdRelated, MsgType, rawJSON)
+          VALUES (?, ?, ?)
         `)
       .bind(
         msgIdRelated,
         msgType,
-        msgType === 'text' ? text : null,
-        msgType === 'voice' ? voice : null,
-        msgIdRelated
+        JSON.stringify(rawJSON)
       )
-      .first();  // runs the statement and returns the first (only) row
-    return { MsgIdRelated: msgIdRelated, Sequence: row.Sequence };
+      .run();
+    return (insertResult.changes);
   }
 
   /**
-  * Peek for backend replies to a given client message.
-  * @param {number} msgId
-  * @returns {Promise<
-  *   { status: "replied" } 
-  *   | { status: "ready", messages: Array<{ sequence: number, msgType: string, content: string|Uint8Array }> } 
-  *   | { status: "waiting" }
+   * Peek for backend replies to a given client message.
+   * @param {number} msgId
+   * @returns {Promise<
+  *   { status: 'replied' } |
+  *   { status: 'ready'; messages: Array<{ sequence: number; msgType: string; content: any }> } |
+  *   { status: 'pending' }
   * >}
   */
   async peekReply(msgId) {
@@ -259,7 +244,7 @@ export class AgentFlashMemory extends DurableObject {
     // 2. Fetch any backend messages for this msgId, sorted by Sequence
     const backendRows = await this.sql
       .prepare(`
-        SELECT Sequence, MsgType, ContentText, ContentVoice
+        SELECT Sequence, MsgType, rawJSON
           FROM backendMsg
          WHERE MsgIdRelated = ?
          ORDER BY Sequence ASC
@@ -272,66 +257,54 @@ export class AgentFlashMemory extends DurableObject {
       const messages = backendRows.map(r => ({
         sequence: r.Sequence,
         msgType: r.MsgType,
-        content: r.MsgType === "text"
-          ? r.ContentText
-          : r.ContentVoice    // Uint8Array from BLOB
+        content: JSON.parse(r.RawJSON)
       }));
       return { status: "ready", messages };
     }
 
     // 4. No reply yet
-    return { status: "waiting" };
+    return { status: "pending" };
   }
 
   /**
-     * Fetch the last `n` client messages for a given remoteOID,
-     * then load all corresponding **text** backend replies for each message.
-     *
-     * @param {number} n
-     * @param {string} remoteOID
-     * @returns {Promise<
-  *   Array<{
-  *     user:  { type: string, content: any },
-  *     agent: Array<{ type: string, content: any }>
-  *   }>
-  * >}
-  */
-  async getContext(n, remoteOID) {
+   * Fetch the last `n` client messages and their backend replies.
+   * @param {number} n - Number of recent client messages to retrieve
+   * @returns {Promise<Array<{ user: { type: string; content: any }; agent: Array<{ type: string; content: any }> }>>}
+   */
+  async getContext(n) {
     // 1. Get up to `n` most recent client messages
     const userRows = await this.sql
       .prepare(`
-     SELECT MsgId, MsgType, Content
+     SELECT MsgId, MsgType, rawJSON
        FROM clientMsg
-      WHERE RemoteOID = ?
       ORDER BY Timestamp DESC
       LIMIT ?
    `)
-      .bind(remoteOID, n)
-      .all();  // Array of { MsgId, MsgType, Content }
+      .bind(n)
+      .all();  // Array of { MsgId, MsgType, rawJSON }
 
     const contexts = [];
 
     // 2. For each user message, fetch only text replies
-    for (const { MsgId, MsgType, Content } of userRows) {
+    for (const { MsgId, MsgType, RawJSON } of userRows) {
       const backendTextRows = await this.sql
         .prepare(`
        SELECT MsgType, ContentText
          FROM backendMsg
         WHERE MsgIdRelated = ?
-          AND MsgType = 'text'
         ORDER BY Sequence ASC
      `)
         .bind(MsgId)
-        .all();  // Returns only rows where MsgType='text' :contentReference[oaicite:4]{index=4}
+        .all();
 
       // 3. Map to the desired shape
       const agentMsgs = backendTextRows.map(r => ({
         type: r.MsgType,      // always 'text' here :contentReference[oaicite:5]{index=5}
-        content: r.ContentText
+        content: JSON.parse(r.RawJSON)
       }));  // Using Array.prototype.map to transform rows :contentReference[oaicite:6]{index=6}
 
       contexts.push({
-        user: { type: MsgType, content: Content },
+        user: { type: MsgType, content: RawJSON },
         agent: agentMsgs
       });
     }
@@ -385,7 +358,7 @@ async function handle(request, env, ctx) {
 
 async function handleDebug(urlpath, params, env, ctx) {
   switch (urlpath.at(0)) {
-    
+
     case 'subs':
       return new Response(
         params.get('reserved') || 'none',
@@ -393,7 +366,7 @@ async function handleDebug(urlpath, params, env, ctx) {
       );
 
     case 'test-durable':
-      const id = env.agentFlashMemory.idFromName("foo");
+      const id = env.agentFlashMemory.idFromName(JSON.stringify({ remoteOID: 114514, localOID: 1919810 }));
       const stub = env.agentFlashMemory.get(id);
       console.log(stub.sql);
       return new Response("Success", { status: 200 });
@@ -429,7 +402,8 @@ async function handleTencentVerification(env, ctx) {
 async function handleMessage(xml, env, ctx) {
   //log to stream
   ctx.waitUntil(env.kvs.put(Date.now(), xml));
-  const msg = await parseMessageRaw(xml, env);
+  const rawMsg = await parseMessageRaw(xml, env);
+  const msg = await parseMessage(rawMsg, env);
   let reply = "";
 
   // first check if message is already replied

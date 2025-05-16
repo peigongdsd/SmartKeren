@@ -5,10 +5,14 @@
 import { parseStringPromise } from 'xml2js';
 
 export async function parseMessageRaw(xmlMessage, env) {
-    const message = (await parseStringPromise(xmlMessage, {
-        explicitArray: false,
-        mergeAttrs: true
-      })).xml;
+  const message = (await parseStringPromise(xmlMessage, {
+    explicitArray: false,
+    mergeAttrs: true
+  })).xml;
+  return message;
+}
+
+export async function parseMessage(message, env) {
     const type = message.MsgType;
     const meta = { msgId: message.MsgId, fromUser : message.FromUserName, toUser : message.ToUserName };
     console.log(type);
@@ -39,8 +43,7 @@ export async function parseMessageRaw(xmlMessage, env) {
         break;
   
       default:
-        // 其他类型直接返回原始消息
-        data = { raw: message };
+        data = "Unsupported Message Type";
         break;
     }
     return {type: type, meta: meta, data: data};
