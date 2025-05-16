@@ -4,7 +4,7 @@ export function db_initTenantTable(db) {
       CREATE TABLE IF NOT EXISTS tenant (
         uuid TEXT PRIMARY KEY,
         openid TEXT NOT NULL UNIQUE,
-        validFrom INTEGER NOT NULL,
+        since INTEGER NOT NULL,
         validUntil INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_tenant_openid ON tenant(openid);
@@ -16,15 +16,15 @@ export function db_nucTenantTable(db) {
     return db.prepare("");
 }
 
-export function db_updateUser(db, openid, validFrom, validUntil) {
+export function db_updateUser(db, openid, since, validUntil) {
     // No check for injection since we do trust wechat
     return db.prepare(`
-        INSERT INTO tenant (uuid, openid, validFrom, validUntil)
+        INSERT INTO tenant (uuid, openid, since, validUntil)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(openid) DO UPDATE SET
-            validFrom  = excluded.validFrom,
+            since  = excluded.since,
             validUntil = excluded.validUntil
-      `).bind(crypto.randomUUID(), openid, validFrom, validUntil);
+      `).bind(crypto.randomUUID(), openid, since, validUntil);
 }
 
 export function db_deleteUser(db, openid) {
