@@ -395,7 +395,7 @@ async function handleDebug(urlpath, params, env, ctx) {
     case 'test-durable':
       const id = env.agentFlashMemory.idFromName("foo");
       const stub = env.agentFlashMemory.get(id);
-      console.log(stub);
+      console.log(stub.sql);
       return new Response("Success", { status: 200 });
 
     case 'list-all-kv0':

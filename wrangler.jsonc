@@ -42,14 +42,14 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "agentFlashMem",
+        "name": "agentFlashMemory",
         "class_name": "AgentFlashMemory"
       }
     ]
   },
   "migrations": [
     {
-      "tag": "v1",
+      "tag": "v1.1",
       "new_sqlite_classes": [
         "AgentFlashMemory"
       ]
