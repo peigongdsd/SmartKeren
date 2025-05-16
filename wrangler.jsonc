@@ -6,7 +6,7 @@
     "main": "worker.js",
   
     // Date after which breaking changes are disallowed
-    "compatibility_date": "2025-05-15",
+    "compatibility_date": "2025-05-08",
     "compatibility_flags": [
         "nodejs_compat"
       ],

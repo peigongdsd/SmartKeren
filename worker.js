@@ -341,8 +341,122 @@ export class AgentFlashMemory extends DurableObject {
 
 export default {
   async fetch(request, env, ctx) {
-    return handleRequest(request, env, ctx);
+    //return handleRequest(request, env, ctx);
+    return await handle(request, env, ctx);
   }
+}
+
+async function handle(request, env, ctx) {
+  const url = new URL(request.url);
+  const urlpath = url.pathname.split('/').filter(Boolean);
+  const params = url.searchParams;
+  if (urlpath[0] === "debug") {
+    return await handleDebug(urlpath.slice(1), params, env, ctx);
+  } else {
+    const signature = params.get('signature') || '';
+    const timestamp = params.get('timestamp') || '';
+    const nonce = params.get('nonce') || '';
+    const echostr = params.get('echostr') || '';
+    const hash = await sha1([env.token, timestamp, nonce].sort().join(''));
+    if (hash === signature) {
+      switch (request.method) {
+        case 'GET':
+          // 签名校验：GET 请求用于首次验证服务器地址
+          return await handleTencentVerification(env, ctx);
+        case 'POST':
+          // POST 请求：校验签名后处理消息
+          try {
+            const xml = await request.text();
+            return await handleMessage(xml, env, ctx);
+          }
+          catch (error) {
+            ctx.waitUntil(env.kvs.put(Date.now() + 5, error));
+            return new Response('success', { status: 200 });
+          }
+        default:
+      }
+      return new Response('Method Not Allowed', { status: 405 });
+    } else {
+      return new Response('Invalid signature', { status: 403 });
+    }
+  }
+}
+
+async function handleDebug(urlpath, params, env, ctx) {
+  switch (urlpath.at(0)) {
+    case 'subs':
+      return new Response(
+        params.get('reserved') || 'none',
+        { headers: { 'Content-Type': 'text/plain;charset=UTF-8' } }
+      );
+
+    case 'list-all-kv0':
+      return debug_inspectkv(url, env.kv0, env.kvs, ctx);
+
+    case 'list-all-kvs':
+      return debug_inspectkv(url, env.kvs, env.kvs, ctx);
+
+    case 'test-ai': 
+      const query = params.get('query') || '';
+      const pic = params.get('picurl') || '';
+      // note: pass `pic` (not `picurl`) unless your function expects the raw param name
+      const aiResult = await callAzureAI(env, query, pic);
+      return new Response(aiResult, { status: 200 });
+
+    case 'test-final':
+      const msg = params.get('msg') || '';
+      return await handleMessage(msg, env, ctx);
+
+    default:
+
+  }
+  return new Response('Not Found', { status: 404 });
+}
+
+async function handleTencentVerification(env, ctx) {
+  ctx.waitUntil(env.kvs.put(timestamp, "verification"));
+  return new Response(echostr, { status: 200 });
+}
+
+async function handleMessage(xml, env, ctx) {
+  //log to stream
+  ctx.waitUntil(env.kvs.put(Date.now(), xml));
+  const msg = await parseMessageRaw(xml, env);
+  let reply = "";
+  switch (msg.type) {
+    case "text":
+      const clientoid = msg.meta.fromUser;
+      if (isAdmin(env, clientoid)) {
+        // All priviledged instructions must start with #
+        if (msg.data.content.charAt(0) === '#') {
+          // Escape to admin mode and do something
+          const subsurl = formatOneshotSubs(env.appid, "0", "0", "https://webot0.krusllee.com/subs", "tokenb80vt7c0t");
+          const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
+          //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
+          return new Response(subsurl, {
+            status: 200,
+            headers: { 'Content-Type': 'application/xml' }
+          });
+        }
+      }
+      reply = await callAzureAI(env, msg.data.content, null);
+      break;
+    case "image":
+      reply = await callAzureAI(env, null, msg.data.picUrl);
+      break;
+    default:
+      reply = "对不起，暂时还不支持这种类型的消息";
+  }
+  const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, reply);
+  return new Response(replyXml, {
+    status: 200,
+    headers: { 'Content-Type': 'application/xml' }
+  });
+
+}
+
+async function handleAdmin() {
+
 }
 
 async function handleRequest(request, env, ctx) {
@@ -367,7 +481,8 @@ async function handleRequest(request, env, ctx) {
   }
   else if (url.pathname === "/test-ai-1919810") {
     const query = params.get('query') || '';
-    const pic = params.get('picurl') || '';
+    const picurl = params.get('picurl') || '';
+
     return new Response(await callAzureAI(env, query, picurl), { status: 200 });
     //return callAzureAIFoundry(env, query, null);
   }

@@ -62,8 +62,8 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
       body: JSON.stringify({
         messages,
         max_tokens: 1000,
-        temperature: 0.7,
-        stream: false
+        temperature: 0.2,
+        stream: false,
       })
     });
     console.log("end");
