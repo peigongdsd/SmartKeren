@@ -391,10 +391,10 @@ async function handleDebug(urlpath, params, env, ctx) {
       );
 
     case 'list-all-kv0':
-      return debug_inspectkv(url, env.kv0, env.kvs, ctx);
+      return await debug_inspectkv(env.kv0, env.kvs, ctx);
 
     case 'list-all-kvs':
-      return debug_inspectkv(url, env.kvs, env.kvs, ctx);
+      return await debug_inspectkv(env.kvs, env.kvs, ctx);
 
     case 'test-ai': 
       const query = params.get('query') || '';
@@ -558,7 +558,7 @@ async function handleRequest(request, env, ctx) {
 
 
 //Debug list all KV-s
-async function debug_inspectkv(url, kv, kvstream, ctx) {
+async function debug_inspectkv(kv, kvstream, ctx) {
   ctx.waitUntil(kvstream.put(Date.now(), "inspect"));
   let cursor;
   const entries = [];
