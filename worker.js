@@ -341,7 +341,6 @@ export class AgentFlashMemory extends DurableObject {
 
 export default {
   async fetch(request, env, ctx) {
-    //return handleRequest(request, env, ctx);
     return await handle(request, env, ctx);
   }
 }
@@ -458,103 +457,6 @@ async function handleMessage(xml, env, ctx) {
 async function handleAdmin() {
 
 }
-
-async function handleRequest(request, env, ctx) {
-  const url = new URL(request.url);
-  const params = url.searchParams;
-
-  if (url.pathname === "/fetch_access_token") {
-    // Fetch Access Token and stor
-  }
-
-  //for debug only
-  if (url.pathname === "/subs") {
-    return new Response(arams.get('reserved') || 'none', {
-      headers: { "Content-Type": "text/plain;charset=UTF-8" }
-    });
-  }
-  if (url.pathname === "/list-all-kv0-1919810") {
-    return debug_inspectkv(url, env.kv0, env.kvs, ctx);
-  }
-  else if (url.pathname === "/list-all-kvs-1919810") {
-    return debug_inspectkv(url, env.kvs, env.kvs, ctx);
-  }
-  else if (url.pathname === "/test-ai-1919810") {
-    const query = params.get('query') || '';
-    const picurl = params.get('picurl') || '';
-
-    return new Response(await callAzureAI(env, query, picurl), { status: 200 });
-    //return callAzureAIFoundry(env, query, null);
-  }
-  //debug end
-
-  const signature = params.get('signature') || '';
-  const timestamp = params.get('timestamp') || '';
-  const nonce = params.get('nonce') || '';
-  const echostr = params.get('echostr') || '';
-
-
-  // 1. 签名校验：GET 请求用于首次验证服务器地址
-  const hash = await sha1([env.token, timestamp, nonce].sort().join(''));
-  if (request.method === 'GET') {
-    if (hash === signature) {
-      //log to stream
-      ctx.waitUntil(env.kvs.put(timestamp, "verification"));
-      return new Response(echostr, { status: 200 });
-    }
-    return new Response('Invalid signature', { status: 403 });
-  }
-
-  // 2. POST 请求：校验签名后处理消息
-  if (request.method === 'POST') {
-    try {
-      if (hash == signature) {
-        const xml = await request.text();
-        //log to stream
-        ctx.waitUntil(env.kvs.put(Date.now(), xml));
-        const msg = await parseMessageRaw(xml, env);
-        let reply = "";
-        switch (msg.type) {
-          case "text":
-            const clientoid = msg.meta.fromUser;
-            if (isAdmin(env, clientoid)) {
-              // All priviledged instructions must start with #
-              if (msg.data.content.charAt(0) === '#') {
-                // Escape to admin mode and do something
-                const subsurl = formatOneshotSubs(env.appid, "0", "0", "https://webot0.krusllee.com/subs", "tokenb80vt7c0t");
-                const replyXml = formatRichMsgOneshot(msg.meta.fromUser, msg.meta.toUser, '原神，启动！', '跟我一起来提瓦特大陆冒险吧！', 'https://genshin.hoyoverse.com/favicon.ico', 'https://genshin.hoyoverse.com/');
-                //const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, 'Privilege Confirmed');
-                return new Response(subsurl, {
-                  status: 200,
-                  headers: { 'Content-Type': 'application/xml' }
-                });
-              }
-            }
-            reply = await callAzureAI(env, msg.data.content, null);
-            break;
-          case "image":
-            reply = await callAzureAI(env, null, msg.data.picUrl);
-            break;
-          default:
-            reply = "对不起，暂时还不支持这种类型的消息";
-        }
-        const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, reply);
-
-        return new Response(replyXml, {
-          status: 200,
-          headers: { 'Content-Type': 'application/xml' }
-        });
-      }
-    } catch (error) {
-      ctx.waitUntil(env.kvs.put(Date.now() + 5, error));
-      return new Response('success', { status: 200 });
-    }
-    return new Response('Invalid signature', { status: 403 });
-  }
-  return new Response('Method Not Allowed', { status: 405 });
-}
-
-
 
 
 //Debug list all KV-s
