@@ -66,7 +66,6 @@ export async function callAzureAI(env, text, imageUrlOrBase64) {
         stream: false,
       })
     });
-    console.log("end");
   
     // 4. Error handling
     if (!response.ok) {

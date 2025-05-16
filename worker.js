@@ -43,7 +43,7 @@ Table backendMsg
 export class AgentFlashMemory extends DurableObject {
   sql;
   constructor(ctx, env) {
-    console.log(ctx.id.name);
+    //console.log(ctx.id.name);
     let identifiers = JSON.parse(ctx.id.name);
     // Required, as we're extending the base class.
     super(ctx, env);
@@ -59,8 +59,8 @@ export class AgentFlashMemory extends DurableObject {
         CreateOn  INTEGER PRIMARY KEY     -- signed 64-bit, perfect for Unix timestamps
       );
 
-      INSERT OR REPLACE INTO meta(remoteOID, localOID, CreateOn)
-      VALUES(${identifiers.remoteOID}, ${identifiers.localOID}, ${Date.now()});
+      INSERT OR REPLACE INTO meta(RemoteOID, LocalOID, CreateOn)
+      VALUES("${identifiers.remoteOID}", "${identifiers.localOID}", ${Date.now()});
 
       -- clientMsg table
       CREATE TABLE IF NOT EXISTS clientMsg (
@@ -137,44 +137,31 @@ export class AgentFlashMemory extends DurableObject {
    * @param {number} createTime - Epoch seconds when the message was first seen
    * @param {'text'|'image'|'voice'|'video'|'shortvideo'|'location'|'link'} msgType
    * @param {object} rawJSON - The parsed JSON content of the message
-   * @returns {Promise<{ state: 'pending' | 'replied' }>}
+   * @returns {Promise<{'pending'|'replied'}>}
    */
   async pushMsg(msgId
     , createTime
     , msgType
     , rawJSON
   ) {
-
     // 1. Try to insert as a new message (Replied=0, Knock=0). If it already exists, changes === 0.
-    const insertResult = await this.sql
-      .prepare(`
+    const insertResult = await this.sql.exec(`
         INSERT INTO clientMsg
           (MsgId, CreateTime, MsgType, RawJSON)
-        VALUES (?, ?, ?, ?)
+        VALUES (${msgId}, ${createTime}, '${msgType}', '${rawJSON}')
         ON CONFLICT(MsgId) DO NOTHING
-      `)
-      .bind(
-        msgId,
-        createTime,
-        msgType,
-        JSON.stringify(rawJSON)
-      )
-      .run();
-
+      `);
     // 2a. Was a new row inserted? If so, first push → waiting with 0 knocks.
     if (insertResult.changes > 0) {
-      return { state: "pending" };
+      return "pending";
     } else {
       const row = await this.sql
-        .prepare(`SELECT Replied, Knock FROM clientMsg WHERE MsgId = ?`)
-        .bind(msgId)
-        .first();
-
+        .exec(`SELECT Replied FROM clientMsg WHERE MsgId = ${msgId}`);
       // 3. If already replied, bail out
       if (row.Replied === 1) {
-        return { state: "replied" };
+        return "replied";
       } else
-        return { state: "pending" };
+        return "pending";
     }
   }
 
@@ -186,13 +173,11 @@ export class AgentFlashMemory extends DurableObject {
   async replyMsg(msgId) {
     /* set the replied for the msgId to be 1 if msgid exist. Otherwise do nothing.  */
     const result = await this.sql
-      .prepare(`
+      .exec(`
       UPDATE clientMsg
          SET Replied = 1
-       WHERE MsgId = ?
-    `)
-      .bind(msgId)
-      .run();
+       WHERE MsgId = ${msgId}
+    `);
 
     // result.changes is the number of rows updated
     return { updated: result.changes };
@@ -207,17 +192,11 @@ export class AgentFlashMemory extends DurableObject {
    */
   async pushReply(msgIdRelated, msgType, rawJSON) {    // Single-statement insert with built-in sequencing and returning:
     const insertResult = await this.sql
-      .prepare(`
+      .exec(`
           INSERT INTO backendMsg
             (MsgIdRelated, MsgType, rawJSON)
-          VALUES (?, ?, ?)
-        `)
-      .bind(
-        msgIdRelated,
-        msgType,
-        JSON.stringify(rawJSON)
-      )
-      .run();
+          VALUES (${msgIdRelated}, '${msgType}', '${rawJSON}')
+        `);
     return (insertResult.changes);
   }
 
@@ -233,9 +212,7 @@ export class AgentFlashMemory extends DurableObject {
   async peekReply(msgId) {
     // 1. Check if the client message was already replied
     const clientRow = await this.sql
-      .prepare(`SELECT Replied FROM clientMsg WHERE MsgId = ?`)
-      .bind(msgId)
-      .first();
+      .exec(`SELECT Replied FROM clientMsg WHERE MsgId = ${msgId}`);
 
     if (clientRow?.Replied === 1) {
       return { status: "replied" };
@@ -243,14 +220,12 @@ export class AgentFlashMemory extends DurableObject {
 
     // 2. Fetch any backend messages for this msgId, sorted by Sequence
     const backendRows = await this.sql
-      .prepare(`
+      .exec(`
         SELECT Sequence, MsgType, rawJSON
           FROM backendMsg
-         WHERE MsgIdRelated = ?
+         WHERE MsgIdRelated = ${msgId}
          ORDER BY Sequence ASC
-      `)
-      .bind(msgId)
-      .all();
+      `);
 
     if (backendRows.length > 0) {
       // 3. Map raw rows into a JS-friendly messages array
@@ -274,28 +249,24 @@ export class AgentFlashMemory extends DurableObject {
   async getContext(n) {
     // 1. Get up to `n` most recent client messages
     const userRows = await this.sql
-      .prepare(`
+      .exec(`
      SELECT MsgId, MsgType, rawJSON
        FROM clientMsg
       ORDER BY Timestamp DESC
-      LIMIT ?
-   `)
-      .bind(n)
-      .all();  // Array of { MsgId, MsgType, rawJSON }
+      LIMIT ${n}
+   `);  // Array of { MsgId, MsgType, rawJSON }
 
     const contexts = [];
 
     // 2. For each user message, fetch only text replies
     for (const { MsgId, MsgType, RawJSON } of userRows) {
       const backendTextRows = await this.sql
-        .prepare(`
+        .exec(`
        SELECT MsgType, ContentText
          FROM backendMsg
-        WHERE MsgIdRelated = ?
+        WHERE MsgIdRelated = ${MsgId}
         ORDER BY Sequence ASC
-     `)
-        .bind(MsgId)
-        .all();
+     `);
 
       // 3. Map to the desired shape
       const agentMsgs = backendTextRows.map(r => ({
@@ -344,7 +315,7 @@ async function handle(request, env, ctx) {
             return await handleMessage(xml, env, ctx);
           }
           catch (error) {
-            ctx.waitUntil(env.kvs.put(Date.now() + 5, error));
+            ctx.waitUntil(env.kvs.put(Date.now(), error.stack));
             return new Response('success', { status: 200 });
           }
         default:
@@ -368,8 +339,13 @@ async function handleDebug(urlpath, params, env, ctx) {
     case 'test-durable':
       const id = env.agentFlashMemory.idFromName(JSON.stringify({ remoteOID: 114514, localOID: 1919810 }));
       const stub = env.agentFlashMemory.get(id);
-      console.log(stub.sql);
       return new Response("Success", { status: 200 });
+
+    case 'purge-all-kv0':
+      return await debug_inspectkv(env.kv0, env.kvs, ctx);
+
+    case 'purge-all-kvs':
+      return await debug_inspectkv(env.kvs, env.kvs, ctx);
 
     case 'list-all-kv0':
       return await debug_inspectkv(env.kv0, env.kvs, ctx);
@@ -401,14 +377,44 @@ async function handleTencentVerification(env, ctx) {
 
 async function handleMessage(xml, env, ctx) {
   //log to stream
-  ctx.waitUntil(env.kvs.put(Date.now(), xml));
-  const rawMsg = await parseMessageRaw(xml, env);
-  const msg = await parseMessage(rawMsg, env);
+  await env.kvs.put(Date.now(), xml);
+  const rawMsg = await parseMessageRaw(xml);
+  const msg = await parseMessage(rawMsg);
   let reply = "";
 
+  await env.kvs.put(Date.now(), "Start");
+  // Get the database
+  const threadID = env.agentFlashMemory.idFromName(
+    JSON.stringify({
+      remoteOID: rawMsg.FromUserName,
+      localOID: rawMsg.ToUserName
+    })
+  );
+  const dbStub = env.agentFlashMemory.get(threadID);
+
+  await env.kvs.put(Date.now(), "GetDB");
   // first check if message is already replied
   //  pushmsg, if already replied then pass
   // then wait until reply 
+
+  try {
+
+    await env.kvs.put(Date.now(), typeof(dbStub) + "." +typeof(dbStub.pushMsg) + "." + "");
+    
+    
+    const msgState = await dbStub.pushMsg(
+      rawMsg.MsgId,
+      rawMsg.CreateTime,
+      rawMsg.MsgType,
+      JSON.stringify(msg)
+    );
+
+    ctx.waitUntil(env.kvs.put(Date.now(), JSON.stringify(rawMsg)));
+    ctx.waitUntil(env.kvs.put(Date.now(), msgState));
+  } catch (error) {
+    await env.kvs.put(Date.now(), "SQLError: " + error.stack);
+  }
+  // old function from now
 
   switch (msg.type) {
     case "text":
@@ -427,6 +433,7 @@ async function handleMessage(xml, env, ctx) {
     default:
       reply = "对不起，暂时还不支持这种类型的消息";
   }
+  ctx.waitUntil(env.kvs.put(Date.now(), reply));
   const replyXml = formatTextMsg(msg.meta.fromUser, msg.meta.toUser, reply);
   return new Response(replyXml, {
     status: 200,

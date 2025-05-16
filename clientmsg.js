@@ -4,7 +4,7 @@
 
 import { parseStringPromise } from 'xml2js';
 
-export async function parseMessageRaw(xmlMessage, env) {
+export async function parseMessageRaw(xmlMessage) {
   const message = (await parseStringPromise(xmlMessage, {
     explicitArray: false,
     mergeAttrs: true
@@ -12,7 +12,7 @@ export async function parseMessageRaw(xmlMessage, env) {
   return message;
 }
 
-export async function parseMessage(message, env) {
+export async function parseMessage(message) {
     const type = message.MsgType;
     const meta = { msgId: message.MsgId, fromUser : message.FromUserName, toUser : message.ToUserName };
     console.log(type);
