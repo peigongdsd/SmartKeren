@@ -47,7 +47,13 @@ export class AgentFlashMemory extends DurableObject {
     let identifiers = JSON.parse(ctx.id.name);
     // Required, as we're extending the base class.
     super(ctx, env);
+
+    ctx.waitUntil(env.kvs.put(Date.now(), "sql0"));
+
+
     this.sql = ctx.storage.sql;
+
+    ctx.waitUntil(env.kvs.put(Date.now(), "sql1"));
     this.sql.exec(`
 
       -- maybe we do not need this
@@ -60,8 +66,11 @@ export class AgentFlashMemory extends DurableObject {
       );
 
       INSERT OR REPLACE INTO meta(RemoteOID, LocalOID, CreateOn)
-      VALUES("${identifiers.remoteOID}", "${identifiers.localOID}", ${Date.now()});
+      VALUES(?, ?, ?);
+      `, [identifiers.remoteOID, identifiers.localOID, Date.now()]);
 
+    ctx.waitUntil(env.kvs.put(Date.now(), "sql2"));
+    this.sql.exec(`
       -- clientMsg table
       CREATE TABLE IF NOT EXISTS clientMsg (
         MsgId       INTEGER       NOT NULL PRIMARY KEY,
@@ -78,8 +87,9 @@ export class AgentFlashMemory extends DurableObject {
       -- Indexes for clientMsg
       CREATE INDEX IF NOT EXISTS idx_clientMsg_CreateTime
         ON clientMsg (CreateTime);
-
-
+`);
+    ctx.waitUntil(env.kvs.put(Date.now(), "sql3"));
+    this.sql.exec(`
       -- backendMsg table with Sequence as primary key
       CREATE TABLE IF NOT EXISTS backendMsg (
         MsgIdRelated   INTEGER   NOT NULL,
@@ -99,7 +109,8 @@ export class AgentFlashMemory extends DurableObject {
       CREATE INDEX IF NOT EXISTS idx_backendMsg_MsgIdRelated
         ON backendMsg (MsgIdRelated);
     `);
-    
+    ctx.waitUntil(env.kvs.put(Date.now(), "sql4"));
+
   }
 
   async greeting() {
@@ -406,9 +417,9 @@ async function handleMessage(xml, env, ctx) {
 
   try {
 
-    await env.kvs.put(Date.now(), typeof(dbStub) + "." +typeof(dbStub.pushMsg) + "." + "");
-    
-    
+    await env.kvs.put(Date.now(), typeof (dbStub) + "." + typeof (dbStub.pushMsg) + "." + "");
+
+
     const msgState = await dbStub.pushMsg(
       rawMsg.MsgId,
       rawMsg.CreateTime,
