@@ -41,7 +41,7 @@ Table backendMsg
 */
 
 export class AgentFlashMemory extends DurableObject {
-  sql;
+  //sql;
   constructor(ctx, env) {
     //console.log(ctx.id.name);
     let identifiers = JSON.parse(ctx.id.name);
@@ -99,8 +99,13 @@ export class AgentFlashMemory extends DurableObject {
       CREATE INDEX IF NOT EXISTS idx_backendMsg_MsgIdRelated
         ON backendMsg (MsgIdRelated);
     `);
-
+    
   }
+
+  async greeting() {
+    return 'Hello';
+  }
+
 
   /**
    * Dump every row from meta, clientMsg, and backendMsg.
@@ -396,6 +401,8 @@ async function handleMessage(xml, env, ctx) {
   // first check if message is already replied
   //  pushmsg, if already replied then pass
   // then wait until reply 
+
+  await env.kvs.put(Date.now(), await dbStub.greeting());
 
   try {
 
